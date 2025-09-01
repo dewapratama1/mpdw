@@ -1,0 +1,266 @@
+---
+title: "Tugas MPDW"
+author: "Dewa Rizky Meidiva Pratama"
+date: "2025-09-01"
+output: html_document
+---
+
+```{r}
+library("forecast")
+library("graphics")
+library("TTR")
+library("TSA")
+library("rio")
+```
+
+```{r}
+data <- import("https://raw.githubusercontent.com/nyayunabila/mpdw/refs/heads/main/Pertemuan%201/data-kelompok-9-mpdw.csv")
+```
+
+```{r}
+datadw <- data[401:500, ]
+datadw
+```
+
+```{r}
+str(datadw)
+dim(datadw)
+```
+
+```{r}
+datats <- ts(datadw$daily_revenue)
+summary(datats)
+```
+###PLOT DERET WAKTU
+```{r}
+ts.plot(datats, xlab="Date ", ylab="Daily Revenue", 
+        main = "Time Series Plot")
+points(datats)
+```
+
+Pemulusan, dibuat ramalan 20 periode kedepan dan juga hasil akurasi data latih dan data ujinya
+
+Pembagian 80 : 20
+```{r}
+training<-data[401:480,]
+testing<-data[481:500,]
+traints <- ts(training$daily_revenue)
+testts <- ts(testing$daily_revenue)
+```
+
+Eksplorasi
+```{r}
+plot(datats, col="black",main="Plot semua data")
+points(datats)
+
+plot(traints, col="red",main="Plot data latih")
+points(traints)
+
+plot(testts, col="blue",main="Plot data uji")
+points(testts)
+```
+###SINGLE MOVING AVERAGE
+```{r}
+data.sma<-SMA(traints, n=5)
+data.sma
+```
+
+```{r}
+data.gab<-cbind(aktual=c(traints,rep(NA,20)),pemulusan=c(data.sma,rep(NA,20)),ramalan=c(data.ramal,rep(data.ramal[length(data.ramal)],19)))
+data.gab
+```
+Keakuratan data latih
+```{r}
+error_train.sma <- traints[6:length(traints)] - data.ramal[6:length(traints)]
+
+SSE_train.sma  <- sum(error_train.sma^2)
+MSE_train.sma  <- mean(error_train.sma^2)
+MAPE_train.sma <- mean(abs(error_train.sma / traints[6:length(traints)]) * 100)
+
+akurasi_train.sma <- matrix(
+  c(SSE_train.sma, MSE_train.sma, MAPE_train.sma),
+  nrow = 3,
+  byrow = TRUE
+)
+
+row.names(akurasi_train.sma) <- c("SSE", "MSE", "MAPE")
+colnames(akurasi_train.sma) <- c("Akurasi m = 5")
+
+akurasi_train.sma
+```
+didapat MAPE yang besar, artinya model buruk q`
+```{r}
+error_test.sma = testts - tail(data.gab[,3], length(testts))
+SSE_test.sma = sum(error_test.sma^2)
+MSE_test.sma = mean(error_test.sma^2)
+MAPE_test.sma = mean(abs((error_test.sma / testts) * 100))
+
+akurasi_test.sma <- matrix(c(SSE_test.sma, MSE_test.sma, MAPE_test.sma))
+row.names(akurasi_test.sma) <- c("SSE", "MSE", "MAPE")
+colnames(akurasi_test.sma) <- c("Akurasi m = 5")
+akurasi_test.sma
+```
+MAPEnya juga besar di angka 69
+
+###Double Moving Average
+```{r}
+dma <- SMA(data.sma, n = 5)
+At <- 2*data.sma - dma
+Bt <- 2/(5-1)*(data.sma - dma)
+data.dma<- At+Bt
+data.ramal2<- c(NA, data.dma)
+
+t = 1:20
+f = c()
+
+for (i in t) {
+  f[i] = At[length(At)] + Bt[length(Bt)]*(i)
+}
+
+data.gab2 <- cbind(aktual = c(traints,rep(NA,20)), pemulusan1 = c(data.sma,rep(NA,20)),pemulusan2 = c(data.dma, rep(NA,20)),At = c(At, rep(NA,20)), Bt = c(Bt,rep(NA,20)),ramalan = c(data.ramal2, f[-1]))
+data.gab2
+```
+Error data latih
+```{r}
+valid_index <- which(!is.na(data.ramal2[1:length(traints)]))
+
+error_train.dma <- traints[valid_index] - data.ramal2[valid_index]
+
+SSE_train.dma <- sum(error_train.dma^2)
+MSE_train.dma <- mean(error_train.dma^2)
+MAPE_train.dma <- mean(abs(error_train.dma / traints[valid_index]) * 100)
+
+akurasi_train.dma <- matrix(c(SSE_train.dma, MSE_train.dma, MAPE_train.dma))
+row.names(akurasi_train.dma) <- c("SSE", "MSE", "MAPE")
+colnames(akurasi_train.dma) <- c("Akurasi Data latih DMA m=5")
+akurasi_train.dma
+```
+didapat MAPE yang besar, artinya model dengan pemulusan ini juga buruk.
+```{r}
+# Menghitung nilai keakuratan data uji (DMA m=5)
+valid_index_test <- which(!is.na(data.gab2[ ,6]))
+# Ambil indeks yang sesuai panjang test
+valid_index_test <- tail(valid_index_test, length(testts))
+
+error_test.dma <- testts - data.gab2[valid_index_test,6]
+
+SSE_test.dma <- sum(error_test.dma^2)
+MSE_test.dma <- mean(error_test.dma^2)
+MAPE_test.dma <- mean(abs(error_test.dma / testts) * 100)
+
+akurasi_test.dma <- matrix(c(SSE_test.dma, MSE_test.dma, MAPE_test.dma))
+row.names(akurasi_test.dma) <- c("SSE", "MSE", "MAPE")
+colnames(akurasi_test.dma) <- c("Akurasi Data Uji DMA m=5")
+akurasi_test.dma
+```
+Didapat MAPE yang besar juga
+
+###Simple Exponential Smoothing
+
+```{r}
+ses<- HoltWinters(traints, gamma = FALSE, beta = FALSE, alpha = 0.2)
+plot(ses)
+
+#ramalan
+ramalan<- forecast(ses, h=20)
+ramalan
+```
+###SES
+```{r}
+ses.opt <- ses(traints, h = 20, alpha = NULL)
+plot(ses.opt)
+ses.opt
+
+#Lamda Optimum Holt Winter
+sesopt<- HoltWinters(traints, gamma = FALSE, beta = FALSE,alpha = NULL)
+sesopt
+plot(sesopt)
+
+#ramalan
+ramalanopt<- forecast(sesopt, h=20)
+ramalanopt
+```
+```{r}
+SSE <- sum((traints - fitted(sesopt))^2)
+MSE <- SSE / length(traints)             
+RMSE <- sqrt(MSE)                        
+
+akurasi <- matrix(c(SSE, MSE, RMSE), ncol = 1)
+row.names(akurasi) <- c("SSE", "MSE", "RMSE")
+colnames(akurasi) <- c("Akurasi SES")
+akurasi
+```
+```{r}
+des.1<- HoltWinters(train.ts, gamma = FALSE, beta = 0.2, alpha = 0.2)
+plot(des.1)
+
+#ramalan
+ramalandes1<- forecast(des.1, h=10)
+ramalandes1
+
+#Lamda=0.6 dan gamma=0.3
+des.2<- HoltWinters(train.ts, gamma = FALSE, beta = 0.3, alpha = 0.6)
+plot(des.2)
+
+#ramalan
+ramalandes2<- forecast(des.2, h=10)
+ramalandes2
+```
+```{r}
+#Visually evaluate the prediction
+plot(data1.ts)
+lines(des.1$fitted[,1], lty=2, col="blue")
+lines(ramalandes1$mean, col="red")
+```
+```{r}
+#Lamda dan gamma optimum
+des.opt<- HoltWinters(train.ts, gamma = FALSE)
+des.opt
+plot(des.opt)
+
+#ramalan
+ramalandesopt<- forecast(des.opt, h=10)
+ramalandesopt
+```
+```{r}
+# Akurasi Data Training Model 1
+ssedes.train1 <- des.1$SSE
+msedes.train1 <- ssedes.train1 / length(train.ts)
+
+# Ambil residual tanpa NA
+sisaandes1 <- ramalandes1$residuals
+sisaandes1 <- sisaandes1[!is.na(sisaandes1)]
+
+# MAPE
+mapedes.train1 <- mean(abs(sisaandes1 / train.ts[1:length(sisaandes1)]) * 100)
+
+# Matriks akurasi
+akurasides.1 <- matrix(c(ssedes.train1, msedes.train1, mapedes.train1), ncol=1)
+row.names(akurasides.1) <- c("SSE", "MSE", "MAPE")
+colnames(akurasides.1) <- "Akurasi lamda=0.2 dan gamma=0.2"
+akurasides.1
+
+
+# Akurasi Data Training Model 2
+ssedes.train2 <- des.2$SSE
+msedes.train2 <- ssedes.train2 / length(train.ts)
+
+# Ambil residual tanpa NA
+sisaandes2 <- ramalandes2$residuals
+sisaand.es2 <- sisaandes2[!is.na(sisaandes2)]
+
+# MAPE
+mapedes.train2 <- mean(abs(sisaand.es2 / train.ts[1:length(sisaand.es2)]) * 100)
+
+# Matriks akurasi
+akurasides.2 <- matrix(c(ssedes.train2, msedes.train2, mapedes.train2), ncol=1)
+row.names(akurasides.2) <- c("SSE", "MSE", "MAPE")
+colnames(akurasides.2) <- "Akurasi lamda=0.6 dan gamma=0.3"
+akurasides.2
+
+
+```
+didapat hasil MAPE yang kecil pada pemulusan DES. Didapat hasil yang lebih bagus pada lamda 0.6 dan gamma 0.3 karena menghasilkan MAPE yang lebih kecil, artinya pemulusan DES dengan lamda 0.6 dan gamma 0.3 adalah pemulusan yang terbaik untuk data ini.
+
+
+
