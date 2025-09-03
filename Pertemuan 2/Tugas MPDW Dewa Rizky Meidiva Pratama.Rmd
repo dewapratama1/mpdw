@@ -1,5 +1,5 @@
 ---
-title: "Untitled"
+title: "Tugas MPDW IPM"
 author: "Dewa Rizky Meidiva Pratama"
 date: "2025-09-02"
 output: html_document
@@ -122,4 +122,5 @@ data.frame(
   DW_Statistic = c(dwtest(model_awal)$statistic, model_co$DW[3], dwtest(model_hl)$statistic)
 )
 ```
+
 
