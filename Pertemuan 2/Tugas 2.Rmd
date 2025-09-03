@@ -1,0 +1,125 @@
+---
+title: "Untitled"
+author: "Dewa Rizky Meidiva Pratama"
+date: "2025-09-02"
+output: html_document
+---
+
+```{r}
+library(rio)
+library(lmtest) # Untuk Uji Durbin-Watson
+library(orcutt) # Untuk metode Cochrane-Orcutt
+library(HoRM)   # Untuk metode Hildreth-Lu
+```
+```{r}
+data <- import("https://raw.githubusercontent.com/nyayunabila/mpdw/refs/heads/main/Pertemuan%202/Data%20IPM%20Semarang%20(new).xlsx")
+```
+
+```{r}
+model_awal <- lm(y ~ x, data = data)
+summary(model_awal)
+```
+Nilai Adjusted R^2 sangat tinggi, p value juga < 0,01. artinya model ini sangat baik. coba kita uji asumsi terlebih dahulu
+```{r}
+sisaan_awal <- residuals(model_awal)
+```
+
+```{r}
+plot(data$x, sisaan_awal, type="o", pch=20, col="red",
+     main="Plot Sisaan vs Waktu", xlab="Tahun", ylab="Sisaan")
+abline(h=0, lty=2) 
+```
+Uji formal Durbin Watson
+H0 (Hipotesis Nol): Tidak ada autokorelasi. Sisaan saling bebas.
+H1 (Hipotesis Alternatif): Ada autokorelasi.
+```{r}
+dwtest(model_awal)
+```
+setelah dw test, ternyata ada autokorelasi pada model awal
+
+kita coba pakai metode Cochrane-Orcutt untuk penanganan autokorelasi
+
+```{r}
+model_co <- cochrane.orcutt(model_awal)
+summary(model_co)
+rho <- model_co$rho
+cat("Rho optimum:", rho)
+```
+Setelah menggunakan Cochrane-Orcutt, didapat p value dari durbin watson > 0,05 yang mana artinya autokorelasi sudah tertangani dengan rho optimum 0.3530333
+
+```{r}
+ipm.trans <- data$y[-1] - data$y[-10]*rho
+
+tahun.trans <- data$x[-1] - data$x[-10]*rho
+model_co_manual <- lm(ipm.trans~tahun.trans)
+
+b0_co_manual <- coef(model_co_manual)[1]/(1-rho)
+b1_co_manual <- coef(model_co_manual)[2]
+cat("Koefisien manual Cochrane-Orcutt:\n")
+cat("b0:", b0_co_manual, "\n")
+cat("b1:", b1_co_manual, "\n")
+```
+Pada cara manual juga sudah menunjukkan bahwa koefisien b0 dan b1 sudah hampir sama dengan fungsi otomatis
+
+Selanjutnya kita coba menggunakan Penanganan Autokorelasi Hildreth lu
+
+```{r}
+hildreth.lu.func<- function(r, model){
+  x <- model.matrix(model)[,-1]
+  y <- model.response(model.frame(model))
+  n <- length(y)
+  t <- 2:n
+  y <- y[t]-r*y[t-1]
+  x <- x[t]-r*x[t-1]
+  
+  return(lm(y~x))
+}
+
+r <- c(seq(0.1,0.9, by= 0.1))
+tab <- data.frame("rho" = r, "SSE" = sapply(r, function(i){deviance(hildreth.lu.func(i, model_awal))}))
+round(tab, 4)
+```
+```{r}
+#Rho optimal di sekitar 0.4
+rOpt <- seq(0.2,0.5, by= 0.001)
+tabOpt <- data.frame("rho" = rOpt, "SSE" = sapply(rOpt, function(i){deviance(hildreth.lu.func(i, model_awal))}))
+head(tabOpt[order(tabOpt$SSE),])
+```
+didapat rho optimum di 0,353 dengan SSE 0,3759558
+
+```{r}
+#Grafik SSE optimum
+par(mfrow = c(1,1))
+plot(tab$SSE ~ tab$rho , type = "l", xlab = "Rho", ylab = "SSE")
+abline(v = tabOpt[tabOpt$SSE==min(tabOpt$SSE),"rho"], lty = 2, col="red",lwd=2)
+text(x=0.353, y=0.3759558	, labels = "rho=0.353	", cex = 0.8)
+```
+
+```{r}
+model_hl <- hildreth.lu(data$y, data$x, rho = 0.353	)
+summary(model_hl)
+```
+```{r}
+#Transformasi Balik
+cat("y = ", coef(model_hl)[1]/(1-0.353), "+", coef(model_hl)[2],"x", sep = "")
+```
+
+```{r}
+dwtest(model_hl)
+```
+Setelah menggunakan Hildreth Lu, akhirnya autokorelasi juga bisa tertangani dengan p-value > 0,05
+
+```{r}
+# Menghitung SSE untuk setiap model secara manual
+sse_awal <- sum(residuals(model_awal)^2)
+sse_co <- sum(residuals(model_co)^2)
+sse_hl <- sum(residuals(model_hl)^2)
+
+# Membuat tabel perbandingan
+data.frame(
+  Metode = c("Model Awal (Sakit)", "Cochrane-Orcutt (Sehat)", "Hildreth-Lu (Sehat)"),
+  SSE = c(sse_awal, sse_co, sse_hl),
+  DW_Statistic = c(dwtest(model_awal)$statistic, model_co$DW[3], dwtest(model_hl)$statistic)
+)
+```
+
