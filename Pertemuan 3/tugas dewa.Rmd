@@ -21,7 +21,7 @@ library(car)
 data <- read.csv("D:/User/Unduhan/NewDelhi_Air_quality.csv")
 ```
 
-Saya sudah mencoba pakai data dengan menyertakan link github, tapi gabisa terus, makanya pakai file lokal saja
+Saya sudah mencoba pakai data dengan menyertakan link github, tapi gabisa terus, akhirnya pakai file lokal saja
 
 ```{r}
 # cek korelasi
@@ -214,3 +214,4 @@ akurasi
 ```
 
 model paling optimum adalah DLM karena memiliki nilai MAPE terkecil
+
