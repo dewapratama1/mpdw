@@ -1,0 +1,215 @@
+---
+title: "MPDW PRAK"
+author: "Dewa Rizky Meidiva Pratama"
+date: "2025-09-13"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(stats)
+library(dLagM)
+library(dynlm)
+library(MLmetrics)
+library(lmtest)
+library(car)
+```
+
+```{r}
+data <- read.csv("D:/User/Unduhan/NewDelhi_Air_quality.csv")
+```
+
+Saya sudah mencoba pakai data dengan menyertakan link github, tapi gabisa terus, makanya pakai file lokal saja
+
+```{r}
+# cek korelasi
+cor_matrix <- cor(vars)
+cor_matrix[,"AQI"]
+```
+
+Berkorelasi paling tinggi dengan O3, maka kita pakai O3
+
+```{r}
+# Membuat model regresi sederhana untuk uji Durbin-Watson
+lm_model <- lm(AQI ~ o3, data = data)
+summary(lm_model)
+
+print("Hasil Uji Durbin-Watson untuk autokorelasi:")
+dwtest(lm_model)
+```
+Berdasarkan dw test, disimpulkan bahwa terdapat autokorelasi
+```{r}
+ggplot(data, aes(x = o3, y = AQI)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Hubungan Linear AQI dan O3",
+       x = "Konsentrasi O3",
+       y = "Nilai AQI") +
+  theme_minimal()
+```
+
+```{r}
+train<-data[1:58,]
+test<-data[59:72,]
+train.ts<-ts(train)
+test.ts<-ts(test)
+data.ts<-ts(data)
+```
+
+##Koyck
+```{r}
+model.koyck <- koyckDlm(x = train$o3, y = train$AQI)
+summary(model.koyck)
+AIC(model.koyck)
+BIC(model.koyck)
+```
+
+-   Dari `summary`, kita dapatkan model:
+
+    $$ \hat{Y_t}=0.26260+0.25823X_t+0.42943Y_{t-1} $$
+Tetapi intercep tidak signifikan
+Berikut adalah hasil peramalan y untuk 14 periode kedepan menggunakan model koyck
+
+```{r}
+fore.koyck <- forecast(model = model.koyck, x=test$o3, h=14)
+fore.koyck
+mape.koyck <- MAPE(fore.koyck$forecasts, test$o3)
+mape.koyck #data test
+#akurasi data training
+GoF(model.koyck)
+```
+
+## Regression with Distributed Lag
+##lag optimum
+```{r}
+#penentuan lag optimum 
+finiteDLMauto(formula = AQI ~ o3,
+              data = data.frame(train), q.min = 1, q.max = 10,
+              model.type = "dlm", error.type = "AIC", trace = TRUE)
+```
+berdasarkan AIC dan BIC terkecil, maka lag optimum adalah lag 10
+
+
+```{r}
+model.dlm <- dlm(x = train$o3,y = train$AQI , q = 10)
+summary(model.dlm)
+AIC(model.dlm)
+BIC(model.dlm)
+```
+
+Dari hasil diatas, didapat bahwa $P-value$ dari xt dan $x_{t-7,8,9}<0.05$. Hal ini menunjukkan bahwa xt dan $x_{t-7,8,9}$ berpengaruh signifikan terhadap $y$. Adapun model keseluruhan yang terbentuk adalah sebagai berikut
+
+$$
+\hat{Y_t}=-0.64267+0.42814X_t+0.13889X_{t-1}...-0.09537X_{t-10}
+$$
+
+Berikut merupakan hasil peramalan $y$ untuk 14 periode kedepan
+
+```{r}
+fore.dlm <- forecast(model = model.dlm, x=test$o3, h=14)
+fore.dlm
+mape.dlm <- MAPE(fore.dlm$forecasts, test$AQI)
+mape.dlm
+#akurasi data training
+GoF(model.dlm)
+```
+
+### Model Autoregressive
+#penentuan lag optimum
+```{r}
+model.ardl.opt <- ardlBoundOrders(data = data.frame(data), ic = "AIC", 
+                                  formula = AQI ~ o3 )
+model.ardl.opt
+min_p=c()
+for(i in 1:6){
+  min_p[i]=min(model.ardl.opt$Stat.table[[i]])
+}
+q_opt=which(min_p==min(min_p, na.rm = TRUE))
+p_opt=which(model.ardl.opt$Stat.table[[q_opt]] == 
+              min(model.ardl.opt$Stat.table[[q_opt]], na.rm = TRUE))
+data.frame("q_optimum" = q_opt, "p_optimum" = p_opt, 
+           "AIC"=model.ardl.opt$min.Stat)
+```
+```{r}
+model.ardl <- ardlDlm(formula = AQI ~ o3, 
+                         data = train,p = 13, q = 2)
+summary(model.ardl)
+AIC(model.ardl)
+```
+
+Hasil di atas menunjukkan bahwa pada intercept, hasil uji t menunjukkan nilai-p pada selain o3t $\ge0.05$ Hal ini menunjukkan bahwa peubah o3t berpengaruh signifikan terhadap $y_t$. Model keseluruhannya adalah sebagai berikut:
+$$
+\hat{Y}=-1.04456+0.40658X_t+0.20835X_{t-1}+...+0.14225Y_{t-2}
+$$
+### Peramalan dan Akurasi
+
+```{r}
+fore.ardl <- forecast(model = model.ardl, x=test$o3, h=14)
+fore.ardl
+```
+
+Data di atas merupakan hasil peramalan untuk 14 periode ke depan menggunakan Model Autoregressive dengan $p=13$ dan $q=2$.
+
+```{r}
+mape.ardl <- MAPE(fore.ardl$forecasts, test$AQI)
+mape.ardl
+#akurasi data training
+GoF(model.ardl)
+```
+
+## Pemodelan DLM & ARDL dengan Library `dynlm`
+
+```{r}
+#sama dengan model dlm q=10
+cons_lm1 <- dynlm(AQI ~ o3 + L(o3, 1:10), data = train.ts)
+#sama dengan model ardl p=13 q=2
+cons_lm2 <- dynlm(AQI ~ o3 + L(o3, 1:2) + L(AQI, 1:13), data = train.ts)
+```
+
+### Ringkasan Model
+
+```{r}
+summary(cons_lm1)
+summary(cons_lm2)
+```
+
+### SSE
+
+```{r}
+deviance(cons_lm1)
+deviance(cons_lm2)
+```
+
+#### Autokorelasi
+
+```{r}
+#durbin watson
+dwtest(cons_lm1)
+dwtest(cons_lm2)
+```
+
+#### Heterogenitas
+
+```{r}
+bptest(cons_lm1)
+bptest(cons_lm2)
+```
+
+#### Kenormalan
+
+```{r}
+shapiro.test(residuals(cons_lm1))
+shapiro.test(residuals(cons_lm2))
+```
+
+## Perbandingan Model
+
+```{r}
+akurasi <- matrix(c(mape.koyck, mape.dlm, mape.ardl))
+row.names(akurasi)<- c("Koyck","DLM","Autoregressive")
+colnames(akurasi) <- c("MAPE")
+akurasi
+```
+model paling optimum adalah DLM karena memiliki nilai MAPE terkecil
