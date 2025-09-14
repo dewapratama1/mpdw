@@ -75,7 +75,7 @@ Berikut adalah hasil peramalan y untuk 14 periode kedepan menggunakan model koyc
 ```{r}
 fore.koyck <- forecast(model = model.koyck, x=test$o3, h=14)
 fore.koyck
-mape.koyck <- MAPE(fore.koyck$forecasts, test$o3)
+mape.koyck <- MAPE(fore.koyck$forecasts, test$AQI)
 mape.koyck #data test
 #akurasi data training
 GoF(model.koyck)
@@ -165,7 +165,7 @@ GoF(model.ardl)
 #sama dengan model dlm q=10
 cons_lm1 <- dynlm(AQI ~ o3 + L(o3, 1:10), data = train.ts)
 #sama dengan model ardl p=13 q=2
-cons_lm2 <- dynlm(AQI ~ o3 + L(o3, 1:2) + L(AQI, 1:13), data = train.ts)
+cons_lm2 <- dynlm(AQI ~ o3 + L(o3, 1:13) + L(AQI, 1:2), data = train.ts)
 ```
 
 ### Ringkasan Model
@@ -212,4 +212,5 @@ row.names(akurasi)<- c("Koyck","DLM","Autoregressive")
 colnames(akurasi) <- c("MAPE")
 akurasi
 ```
+
 model paling optimum adalah DLM karena memiliki nilai MAPE terkecil
