@@ -1,7 +1,7 @@
 ---
 title: "Latihan Pert 4 — Simulasi MA(2), AR(2), dan ARMA(2,2)"
 author: "Dewa Rizky Meidiva Pratama:"
-date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+date: "2025-09-20"
 output: html_document
 ---
 
@@ -381,3 +381,4 @@ Scatter plot menunjukkan hubungan positif dan Korelasi antara $Y_t$ dengan $Y_{t
 $$
 \rho_3 = \frac{\phi_1 \gamma_2 + \phi_2 \gamma_1 + \sigma^2 \psi_3}{\gamma_0} = 0.546435
 $$
+
