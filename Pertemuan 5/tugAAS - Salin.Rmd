@@ -1,0 +1,179 @@
+---
+title: "Tugas cek stationer MPDW"
+author: "Dewa Rizky Meidiva Pratama"
+date: "2025-09-01"
+output: html_document
+---
+
+```{r, include=TRUE}
+library("forecast")
+library("graphics")
+library("TTR")
+library("TSA")
+library("rio")
+library("ggplot2")
+library(tsibble)
+library(tseries)
+library(MASS)
+```
+#1 Memuat Dataset
+```{r}
+data <- import("https://raw.githubusercontent.com/nyayunabila/mpdw/refs/heads/main/data%20kelompok%209%20-%20Sheet1.csv")
+
+data$daily_revenue <- gsub(",", ".", data$daily_revenue) |> as.numeric()
+subset_data <- data$daily_revenue[401:500]
+
+```
+#2 Membuat Plot Time Series
+```{r}
+ts_data <- ts(subset_data)
+
+plot_ts <- ts_data |> 
+  as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line(color="#571") + theme_bw() +
+  xlab("Obs") + ylab("Revenue")
+plot_ts
+```
+
+```{r}
+lattice::densityplot(as.vector(ts_data))
+```
+
+Plot deret waktu di atas menunjukkan bahwa data stasioner dalam rataan, ditandai dengan data yang menyebar di sekitar nilai tengahnya (200).
+
+#3 Membuat plot ACF dan uji ADF untuk memastikan stasioner dalam rataan
+```{r}
+acf(ts_data)
+```
+
+```{r}
+tseries::adf.test(ts_data)
+```
+
+dari uji adf terbukti bahwa data stasioner dalam rataan (p-value < 0.05)
+
+#4 Uji Box Cox untuk memastikan stasioner dalam ragam
+```{r}
+index <- seq(1:100)
+bc <- boxcox(
+  ts_data ~ index,
+  lambda = seq(0, 5, by = 0.01)
+)
+
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+c(Batas_Bawah = min(ci_lambda), Batas_Atas = max(ci_lambda))
+```
+
+Hasil uji Box–Cox menunjukkan bahwa nilai λ optimum adalah 0,57 dengan interval kepercayaan 95% sebesar (0,27–0,89). Karena selang tersebut tidak memuat nilai λ = 1, maka dapat disimpulkan bahwa data tidak stasioner dalam ragam sehingga diperlukan transformasi.
+
+#5 Transformasi Box Cox
+Karena pada data 401-500 sudah > 0, maka langsung saja dilakukan transformasi
+
+```{r}
+# Transformasi Box-Cox (lambda ~ 0.5 → akar kuadrat)
+y_bc <- y_shift^0.5
+```
+
+##5.1 Uji Box Cox lagi setelah ditransformasi
+```{r}
+index <- seq(1:length(y_bc))
+bc <- boxcox(y_bc ~ index, lambda = seq(0, 5, by = 0.001))
+
+# Nilai lambda optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang kepercayaan 95%
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+c(Batas_Bawah = min(ci_lambda), Batas_Atas = max(ci_lambda))
+```
+dari hasil transformasi sudah membuktikan bahwa nilai λ = 1 telah masuk pada selang kepercayaan 95%. yang artinya Data sudah stasioner dalam ragam.
+
+##5.2 Partisi data
+###5.2.1 Bagian 1
+
+```{r}
+dtgab1 <- y_bc[41:100] |> ts()
+mean(dtgab1)
+var(dtgab1)
+
+# Plot Time Series
+dtgab1 |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() + theme_bw() +
+  xlab("Obs") + ylab("Nilai")
+
+# Plot ACF
+acf(dtgab1)
+
+# Uji ADF
+adf.test(dtgab1)
+```
+```{r}
+dtgab1 <- dtgab[41:100] |> ts()
+
+# Buat index
+index1 <- seq(1:60)
+
+# Uji Box-Cox
+bc1 <- boxcox(
+  dtgab1 + 25 ~ index1,
+  lambda = seq(-2, 5, by = 0.001)
+)
+
+# Nilai lambda optimum
+lambda1 <- bc1$x[which.max(bc1$y)]
+lambda1
+
+# Selang kepercayaan 95%
+ci_lambda1 <- bc1$x[bc1$y > max(bc1$y) - 0.5 * qchisq(0.95, 1)]
+c(Batas_Bawah = min(ci_lambda1), Batas_Atas = max(ci_lambda1))
+
+```
+
+Partisi data
+###5.2.2 Bagian 2
+```{r}
+dtgab2 <- y_bc[1:60] |> ts()
+mean(dtgab2)
+var(dtgab2)
+
+# Plot Time Series
+dtgab2 |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() + theme_bw() +
+  xlab("Obs") + ylab("Nilai")
+
+# Plot ACF
+acf(dtgab2)
+
+# Uji ADF
+adf.test(dtgab2)
+```
+
+```{r}
+dtgab2 <- dtgab[1:60] |> ts()
+
+# Buat index
+index2 <- seq(1:60)
+
+# Uji Box-Cox
+bc2 <- boxcox(
+  dtgab2 + 25 ~ index2,
+  lambda = seq(-2, 5, by = 0.001)
+)
+
+# Nilai lambda optimum
+lambda2 <- bc2$x[which.max(bc2$y)]
+lambda2
+
+# Selang kepercayaan 95%
+ci_lambda2 <- bc2$x[bc2$y > max(bc2$y) - 0.5 * qchisq(0.95, 1)]
+c(Batas_Bawah = min(ci_lambda2), Batas_Atas = max(ci_lambda2))
+
+```
+Dari Hasil Uji Stasioner ragam dan rataan pada Data Partisi, Terlihat bahwa data 1:60 (401-460) dan 41:100 (441:500) stasioner dalam ragam dan rataan, karena dari uji adf didapat p-valuenya < 0.05 dan pada uji Box-Cox memuat λ = 1 dalam selang kepercayaan 95%
