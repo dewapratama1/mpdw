@@ -1,0 +1,188 @@
+---
+title: "Tugas cek stationer MPDW"
+author: "Dewa Rizky Meidiva Pratama"
+date: "2025-09-01"
+output: html_document
+---
+
+```{r, include=TRUE}
+library("forecast")
+library("graphics")
+library("TTR")
+library("TSA")
+library("rio")
+library("ggplot2")
+library(tsibble)
+library(tseries)
+library(MASS)
+```
+#1 Memuat Dataset
+```{r}
+data <- import("https://raw.githubusercontent.com/nyayunabila/mpdw/refs/heads/main/data%20kelompok%209%20-%20Sheet1.csv")
+
+data$daily_revenue <- gsub(",", ".", data$daily_revenue) |> as.numeric()
+subset_data <- data$daily_revenue[401:500]
+subset_data
+```
+#2 Membuat Plot Time Series
+```{r}
+ts_data <- ts(subset_data, start = 1)
+length(ts_data)
+plot_ts <- ts_data |> 
+  as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line(color="#571") + theme_bw() +
+  xlab("Obs") + ylab("Revenue")
+plot_ts
+```
+
+```{r}
+lattice::densityplot(as.vector(ts_data))
+```
+
+Plot deret waktu di atas menunjukkan bahwa data stasioner dalam rataan, ditandai dengan data yang menyebar di sekitar nilai tengahnya (200).
+
+#3 Membuat plot ACF dan uji ADF untuk memastikan stasioner dalam rataan
+```{r}
+acf(ts_data)
+```
+
+```{r}
+tseries::adf.test(ts_data)
+```
+
+dari uji adf terbukti bahwa data stasioner dalam rataan (p-value < 0.05)
+
+#4 Uji Box Cox untuk memastikan stasioner dalam ragam
+```{r}
+index <- seq(1:100)
+bc <- boxcox(
+  ts_data ~ index,
+  lambda = seq(0, 5, by = 0.01)
+)
+
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+c(Batas_Bawah = min(ci_lambda), Batas_Atas = max(ci_lambda))
+```
+
+Hasil uji Box–Cox menunjukkan bahwa nilai λ optimum adalah 0,57 dengan interval kepercayaan 95% sebesar (0,27–0,89). Karena selang tersebut tidak memuat nilai λ = 1, maka dapat disimpulkan bahwa data tidak stasioner dalam ragam sehingga diperlukan transformasi.
+
+#5 Transformasi Box Cox
+Karena pada data 401-500 sudah > 0, maka langsung saja dilakukan transformasi
+
+```{r}
+# Transformasi Box-Cox (lambda ~ 0.5 → akar kuadrat)
+y_bc <- ts_data^0.5
+```
+
+##5.1 Uji Box Cox lagi setelah ditransformasi
+```{r}
+index <- seq(1:length(y_bc))
+bc <- boxcox(y_bc ~ index, lambda = seq(0, 5, by = 0.001))
+
+# Nilai lambda optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang kepercayaan 95%
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+c(Batas_Bawah = min(ci_lambda), Batas_Atas = max(ci_lambda))
+```
+dari hasil transformasi sudah membuktikan bahwa nilai λ = 1 telah masuk pada selang kepercayaan 95%. yang artinya Data sudah stasioner dalam ragam.
+
+
+```{r}
+acf(y_bc, main = "Plot ACF Data Transformasi Box–Cox")
+pacf(y_bc, main = "Plot PACF Data Transformasi Box–Cox")
+```
+```{r}
+eacf(y_bc)
+```
+dari plot tersebut terlihat data sudah stasioner dalam ragam dan rataan setelah transformasi Box-Cox
+# 6. Pendugaan Parameter
+```{r}
+train <- ts_data[1:70]
+test <- ts_data[71:100]
+
+models <- list(
+  ARIMA000 = Arima(train, order = c(0,0,0)),
+  ARIMA100 = Arima(train, order = c(1,0,0)),
+  ARIMA010 = Arima(train, order = c(0,1,0)),
+  ARIMA001 = Arima(train, order = c(0,0,1)),
+  ARIMA101 = Arima(train, order = c(1,0,1)),
+  ARIMA102 = Arima(train, order = c(1,0,2)),
+  ARIMA201 = Arima(train, order = c(2,0,1)),
+  ARIMA202 = Arima(train, order = c(2,0,2)),
+  ARIMA111 = Arima(train, order = c(1,1,1))
+)
+library(dplyr)
+
+info <- data.frame(
+  Model = names(models),
+  AIC = sapply(models, AIC),
+  BIC = sapply(models, BIC)
+) %>%
+  arrange(AIC)
+
+print(info)
+```
+model terbaik adalah ARIMA(1,1,1) Karena nilai AICnya terkecil dari model lain
+
+# 7. Diagnostik Model
+
+```{r}
+best_model <- models$ARIMA111
+summary(best_model)
+```
+MA signifikan, sementara AR tidak
+
+```{r}
+# Simpan residual
+sisaan <- residuals(best_model)
+
+# Eksplorasi visual residual
+par(mfrow=c(2,2))
+qqnorm(sisaan, main="QQ Plot Residuals")
+qqline(sisaan, col="blue", lwd=2)
+plot(sisaan, type="l", main="Plot Residual", ylab="Residual")
+acf(sisaan, main="ACF Residual")
+pacf(sisaan, main="PACF Residual")
+par(mfrow=c(1,1))
+```
+Sisaan cenderung menyebar normal, Selanjutnya Uji formal
+```{r}
+# 1. Uji Normalitas (Kolmogorov-Smirnov)
+ks.test(sisaan, "pnorm", mean(sisaan), sd(sisaan))
+
+# 2. Uji Kebebasan Residual (Ljung-Box)
+Box.test(sisaan, type="Ljung-Box", lag=20)
+
+# 3. Uji Homogenitas Ragam (Ljung-Box pada residual^2)
+Box.test(sisaan^2, type="Ljung-Box", lag=20)
+
+# 4. Uji Nilai Tengah Residual = 0
+t.test(sisaan, mu=0, conf.level=0.95)
+```
+Residual berdistribusi normal
+Tidak ada autokorelasi
+Ragam residual konstan
+Rata-rata residual = 0
+
+Uji sisaan terpenuhi
+```{r}
+model_overfit <- Arima(train, order=c(1,1,1), method="ML")
+summary(model_overfit)
+lmtest::coeftest(model_overfit)
+```
+Karena model hasil overfitting sudah termasuk di dalam model tentatif dan hasilnya tidak lebih baik, maka model terbaik yang dipilih adalah ARIMA(1,1,1) dilanjutkan dengan peramalan.
+
+# 8. Peramalan
+```{r}
+ramalan <- forecast::forecast(best_model, h = 30)
+ramalan
+data.ramalan <- ramalan$mean
+plot(ramalan)
+```
